@@ -1,250 +1,156 @@
 # Healthcare Microservices Platform
 
-A comprehensive healthcare management system built with Spring Boot microservices architecture, featuring JWT authentication, event-driven communication, and API Gateway routing.
+A comprehensive healthcare management system built with **Spring Boot microservices**, featuring JWT authentication, event-driven communication, and **AWS CDK infrastructure deployment**.
 
-## 🏗️ Architecture Overview
+## 🚀 Quick Start
+
+### LocalStack Deployment (Recommended)
+
+```bash
+# 1. Start LocalStack
+localstack start -d
+
+# 2. Build Docker images
+docker build -t auth-service:latest auth-service/
+docker build -t patient-service:latest patient-service/
+docker build -t billing-service:latest billing-service/
+docker build -t analytics-service:latest analytics-service/
+docker build -t api-gateway-service:latest api-gateway/
+
+# 3. Deploy infrastructure
+cd infrastructure
+mvn compile exec:java
+./localstack-deploy.sh
+```
+
+**Your endpoint:** `http://lb-{id}.elb.localhost.localstack.cloud`
+
+### Test Authentication
+
+```bash
+curl -X POST $ENDPOINT/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"testuser@test.com","password":"password123"}'
+```
+
+## 🏗️ Architecture
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Client Apps   │───▶│   API Gateway   │───▶│  Microservices  │
-│                 │    │   (Port 4004)   │    │                 │
+│   Client Apps   │───▶│ Load Balancer   │───▶│   API Gateway   │
+│                 │    │  (AWS ALB)      │    │   (Port 4004)   │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
-                              │
-                              ▼
-                    ┌─────────────────┐
-                    │ JWT Validation  │
-                    │    Filter       │
-                    └─────────────────┘
+                                                       │
+                                                       ▼
+                                            ┌─────────────────┐
+                                            │ JWT Validation  │
+                                            │    Filter       │
+                                            └─────────────────┘
+                                                       │
+                                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                            ECS Fargate Services                                     │
+├─────────────────┬─────────────────┬─────────────────┬─────────────────────────────┤
+│  Auth Service   │ Patient Service │ Billing Service │    Analytics Service       │
+│   (Port 4005)   │   (Port 4000)   │ (Ports 4001/    │      (Port 4002)           │
+│                 │                 │      9001)      │                             │
+└─────────────────┴─────────────────┴─────────────────┴─────────────────────────────┘
+         │                   │                                          │
+         ▼                   ▼                                          ▼
+┌─────────────────┐ ┌─────────────────┐                    ┌─────────────────┐
+│  PostgreSQL     │ │  PostgreSQL     │                    │   MSK Kafka     │
+│ (Auth Service)  │ │(Patient Service)│                    │   Cluster       │
+└─────────────────┘ └─────────────────┘                    └─────────────────┘
 ```
 
-## 🚀 Services
+**5 Microservices** deployed on **AWS ECS Fargate** with:
 
-| Service               | Port | Description                      | Database   | Key Features                               |
-| --------------------- | ---- | -------------------------------- | ---------- | ------------------------------------------ |
-| **API Gateway**       | 4004 | Central routing & JWT validation | -          | Spring Cloud Gateway, Request routing      |
-| **Auth Service**      | 4005 | Authentication & authorization   | PostgreSQL | JWT tokens, BCrypt encryption              |
-| **Patient Service**   | 4000 | Patient management               | PostgreSQL | CRUD operations, Kafka events, gRPC client |
-| **Billing Service**   | 4001 | Billing & payments               | -          | gRPC server, Account management            |
-| **Analytics Service** | 4002 | Data analytics                   | -          | Kafka consumer, Event processing           |
+- **API Gateway** (Spring Cloud Gateway) - Routing & JWT validation
+- **Auth Service** - JWT authentication with PostgreSQL
+- **Patient Service** - Patient management with Kafka events
+- **Billing Service** - gRPC server for billing operations
+- **Analytics Service** - Kafka consumer for event processing
 
-## 🔧 Technology Stack
+**Infrastructure:** AWS CDK → ECS + MSK + RDS + ALB
 
-### Backend
-
-- **Java 21** - Modern Java features
-- **Spring Boot 3.5.3** - Microservices framework
-- **Spring Cloud Gateway** - API Gateway & routing
-- **Spring Security** - Authentication & authorization
-- **Spring Data JPA** - Database operations
-- **PostgreSQL** - Primary database
-
-### Communication
-
-- **Apache Kafka** - Event streaming & messaging
-- **gRPC** - High-performance RPC communication
-- **REST APIs** - HTTP-based service communication
-- **Protocol Buffers** - Efficient data serialization
-
-### Infrastructure
-
-- **Docker** - Containerization
-- **Docker Compose** - Multi-container orchestration
-- **Kafka UI** - Kafka cluster management
-
-### Testing
-
-- **JUnit 5** - Unit testing framework
-- **REST Assured** - API integration testing
-- **Testcontainers** - Integration testing with containers
-
-## 🔐 Security
-
-- **JWT Authentication** - Stateless token-based auth
-- **BCrypt Password Encoding** - Secure password storage
-- **API Gateway Security Filter** - Centralized auth validation
-- **Role-based Access Control** - User permission management
-
-## 📡 Event-Driven Architecture
+### Event Flow
 
 ```
-Patient Service ──(Kafka)──▶ Analytics Service
-      │                           │
-      ▼                           ▼
- Patient Events              Event Processing
- (Protobuf)                  & Analytics
+Patient Creation Flow:
+┌─────────┐    ┌─────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│ Client  │───▶│ API Gateway │───▶│ Patient Service │───▶│   PostgreSQL    │
+└─────────┘    └─────────────┘    └─────────────────┘    └─────────────────┘
+                                           │
+                                           ▼
+                                  ┌─────────────────┐
+                                  │ Billing Service │ (gRPC)
+                                  └─────────────────┘
+                                           │
+                                           ▼
+                                  ┌─────────────────┐    ┌─────────────────┐
+                                  │  Kafka Topic    │───▶│ Analytics       │
+                                  │   (patient)     │    │   Service       │
+                                  └─────────────────┘    └─────────────────┘
 ```
 
-## 🚦 Getting Started
+## 🔧 Tech Stack
 
-### Prerequisites
+**Backend:** Java 21, Spring Boot 3.5.3, Spring Security, JPA/Hibernate  
+**Communication:** Kafka, gRPC, REST APIs, Protocol Buffers  
+**Infrastructure:** AWS CDK, ECS Fargate, MSK, RDS PostgreSQL, ALB  
+**Development:** Docker, LocalStack, Maven, JUnit 5
 
-- Java 21+
-- Docker & Docker Compose
-- Maven 3.9+
+## 📚 Documentation
 
-### 1. Clone Repository
-
-```bash
-git clone <repository-url>
-cd healthcare-microservices
-```
-
-### 2. Start Infrastructure
-
-```bash
-# Start Kafka and databases
-docker-compose up -d
-
-# Start Kafka UI (optional)
-# Access at http://localhost:8080
-```
-
-### 3. Build Services
-
-```bash
-# Build all services
-mvn clean package -DskipTests
-
-# Or build individual services
-cd patient-service && mvn clean package -DskipTests
-cd auth-service && mvn clean package -DskipTests
-# ... repeat for other services
-```
-
-### 4. Run Services
-
-```bash
-# Start each service (in separate terminals or as Docker containers)
-java -jar auth-service/target/auth-service-*.jar
-java -jar patient-service/target/patient-service-*.jar
-java -jar billing-service/target/billing-service-*.jar
-java -jar analytics-service/target/analytics-service-*.jar
-java -jar api-gateway/target/api-gateway-*.jar
-```
-
-## 📚 API Documentation
-
-### Authentication
-
-```bash
-# Login
-POST http://localhost:4004/auth/login
-Content-Type: application/json
-
-{
-  "email": "testuser@test.com",
-  "password": "password123"
-}
-
-# Response
-{
-  "token": "eyJhbGciOiJIUzI1NiJ9..."
-}
-```
-
-### Patient Management (Protected)
-
-```bash
-# Create Patient
-POST http://localhost:4004/api/patients
-Authorization: Bearer <jwt-token>
-Content-Type: application/json
-
-{
-  "name": "John Doe",
-  "email": "john.doe@example.com",
-  "phone": "123-456-7890"
-}
-```
-
-### API Documentation URLs
-
-- Auth Service: http://localhost:4004/api-docs/auth
-- Patient Service: http://localhost:4004/api-docs/patients
+| Topic                 | Link                                               |
+| --------------------- | -------------------------------------------------- |
+| **Deployment Guide**  | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)           |
+| **API Documentation** | [docs/API.md](docs/API.md)                         |
+| **Troubleshooting**   | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) |
 
 ## 🧪 Testing
 
-### Integration Tests
-
 ```bash
-cd integration-tests
-mvn test
+# Integration tests
+cd integration-tests && mvn test
+
+# Individual service tests
+cd patient-service && mvn test
 ```
 
-### Individual Service Tests
+## ✅ Completed Features
 
-```bash
-cd patient-service
-mvn test
-```
+- [x] **Microservices Architecture** - 5 independent services
+- [x] **JWT Authentication** - Secure token-based auth with validation
+- [x] **API Gateway** - Centralized routing and security
+- [x] **Event-Driven Communication** - Kafka integration with Protobuf
+- [x] **gRPC Communication** - High-performance inter-service calls
+- [x] **Database Integration** - PostgreSQL with JPA/Hibernate
+- [x] **Docker Containerization** - All services containerized
+- [x] **Infrastructure as Code** - AWS CDK with Java
+- [x] **LocalStack Deployment** - Complete AWS simulation locally
+- [x] **Load Balancing** - Application Load Balancer with health checks
+- [x] **Container Orchestration** - ECS Fargate services
+- [x] **Managed Services** - MSK Kafka and RDS PostgreSQL
+- [x] **Centralized Logging** - CloudWatch logs integration
+- [x] **Integration Testing** - REST Assured test suite
+- [x] **API Documentation** - Swagger/OpenAPI integration
+- [x] **Health Monitoring** - Service health checks and monitoring
 
-## 🔄 Event Flow
+## 🔄 Upcoming Features
 
-1. **Patient Creation**:
-
-   - Client → API Gateway → Patient Service
-   - Patient Service → Database (save patient)
-   - Patient Service → Billing Service (gRPC call)
-   - Patient Service → Kafka (publish event)
-   - Analytics Service ← Kafka (consume event)
-
-2. **Authentication Flow**:
-   - Client → API Gateway → Auth Service
-   - Auth Service → Database (validate credentials)
-   - Auth Service → Client (JWT token)
-   - Subsequent requests use JWT for validation
-
-## 🐳 Docker Configuration
-
-### Networks
-
-- **internal**: Inter-service communication network
-
-### Containers
-
-- `kafka`: Apache Kafka message broker
-- `kafka-ui`: Web UI for Kafka management
-- `auth-service-db`: PostgreSQL for auth service
-- `patient-service-db`: PostgreSQL for patient service
-
-## 📊 Monitoring & Management
-
-- **Kafka UI**: http://localhost:8080 - Monitor Kafka topics and messages
-- **Health Endpoints**: Each service exposes `/actuator/health`
-- **Logs**: Docker logs available via `docker logs <container-name>`
-
-## 🔧 Configuration
-
-### Environment Variables
-
-Services can be configured via environment variables:
-
-- `SPRING_DATASOURCE_URL`: Database connection
-- `KAFKA_BOOTSTRAP_SERVERS`: Kafka broker address
-- `AUTH_SERVICE_URL`: Auth service endpoint
-
-### Application Properties
-
-Each service has its own `application.properties` for configuration.
-
-## 🚀 Deployment
-
-### Local Development
-
-Use the provided Docker Compose setup for local development.
-
-### Production
-
-- Configure external databases
-- Set up Kafka cluster
-- Use container orchestration (Kubernetes/Docker Swarm)
-- Configure load balancers
-- Set up monitoring and logging
+- [ ] **Service Mesh** - Istio integration for advanced traffic management
+- [ ] **Distributed Tracing** - Jaeger/Zipkin for request tracing
+- [ ] **Circuit Breaker** - Resilience4j for fault tolerance
+- [ ] **Caching Layer** - Redis integration for performance
+- [ ] **Security Enhancements** - OAuth2, rate limiting, API versioning
+- [ ] **Kubernetes Deployment** - Helm charts and K8s manifests
+- [ ] **CI/CD Pipeline** - GitHub Actions for automated deployment
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes
 4. Add tests
 5. Submit a pull request
@@ -252,31 +158,6 @@ Use the provided Docker Compose setup for local development.
 ## 📝 License
 
 This project is licensed under the MIT License.
-
-## 🆘 Troubleshooting
-
-### Common Issues
-
-1. **Port conflicts**: Ensure ports 4000-4005, 8080, 9092 are available
-2. **Database connection**: Check PostgreSQL containers are running
-3. **Kafka connectivity**: Verify Kafka container is healthy
-4. **JWT validation**: Ensure auth-service is accessible from API Gateway
-
-### Useful Commands
-
-```bash
-# Check running containers
-docker ps
-
-# View service logs
-docker logs <service-name>
-
-# Restart API Gateway (fixes DNS issues)
-docker restart api-gateway
-
-# Test Kafka connectivity
-docker exec kafka kafka-topics.sh --list --bootstrap-server localhost:9092
-```
 
 ---
 
